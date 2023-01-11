@@ -25249,6 +25249,11 @@
                     "method": "GET",
                     "uri": "/{Bucket}?versions",
                     "code": 200
+                },
+                "smithy.api#paginated": {
+                    "inputToken": "KeyMarker",
+                    "outputToken": "NextKeyMarker",
+                    "pageSize": "MaxKeys"
                 }
             }
         },

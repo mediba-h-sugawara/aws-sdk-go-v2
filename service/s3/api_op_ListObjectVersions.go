@@ -4,6 +4,7 @@ package s3
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	s3cust "github.com/aws/aws-sdk-go-v2/service/s3/internal/customizations"
@@ -238,6 +239,100 @@ func (c *Client) addOperationListObjectVersionsMiddlewares(stack *middleware.Sta
 		return err
 	}
 	return nil
+}
+
+// ListObjectVersionsAPIClient is a client that implements the ListObjectVersions
+// operation.
+type ListObjectVersionsAPIClient interface {
+	ListObjectVersions(context.Context, *ListObjectVersionsInput, ...func(*Options)) (*ListObjectVersionsOutput, error)
+}
+
+var _ ListObjectVersionsAPIClient = (*Client)(nil)
+
+// ListObjectVersionsPaginatorOptions is the paginator options for
+// ListObjectVersions
+type ListObjectVersionsPaginatorOptions struct {
+	// Sets the maximum number of keys returned in the response. By default the action
+	// returns up to 1,000 key names. The response might contain fewer keys but will
+	// never contain more. If additional keys satisfy the search criteria, but were not
+	// returned because max-keys was exceeded, the response contains true. To return
+	// the additional keys, see key-marker and version-id-marker.
+	Limit int32
+
+	// Set to true if pagination should stop if the service returns a pagination token
+	// that matches the most recent token provided to the service.
+	StopOnDuplicateToken bool
+}
+
+// ListObjectVersionsPaginator is a paginator for ListObjectVersions
+type ListObjectVersionsPaginator struct {
+	options   ListObjectVersionsPaginatorOptions
+	client    ListObjectVersionsAPIClient
+	params    *ListObjectVersionsInput
+	nextToken *string
+	firstPage bool
+}
+
+// NewListObjectVersionsPaginator returns a new ListObjectVersionsPaginator
+func NewListObjectVersionsPaginator(client ListObjectVersionsAPIClient, params *ListObjectVersionsInput, optFns ...func(*ListObjectVersionsPaginatorOptions)) *ListObjectVersionsPaginator {
+	if params == nil {
+		params = &ListObjectVersionsInput{}
+	}
+
+	options := ListObjectVersionsPaginatorOptions{}
+	if params.MaxKeys != 0 {
+		options.Limit = params.MaxKeys
+	}
+
+	for _, fn := range optFns {
+		fn(&options)
+	}
+
+	return &ListObjectVersionsPaginator{
+		options:   options,
+		client:    client,
+		params:    params,
+		firstPage: true,
+		nextToken: params.KeyMarker,
+	}
+}
+
+// HasMorePages returns a boolean indicating whether more pages are available
+func (p *ListObjectVersionsPaginator) HasMorePages() bool {
+	return p.firstPage || (p.nextToken != nil && len(*p.nextToken) != 0)
+}
+
+// NextPage retrieves the next ListObjectVersions page.
+func (p *ListObjectVersionsPaginator) NextPage(ctx context.Context, optFns ...func(*Options)) (*ListObjectVersionsOutput, error) {
+	if !p.HasMorePages() {
+		return nil, fmt.Errorf("no more pages available")
+	}
+
+	params := *p.params
+	params.KeyMarker = p.nextToken
+
+	params.MaxKeys = p.options.Limit
+
+	result, err := p.client.ListObjectVersions(ctx, &params, optFns...)
+	if err != nil {
+		return nil, err
+	}
+	p.firstPage = false
+
+	prevToken := p.nextToken
+	p.nextToken = nil
+	if result.IsTruncated {
+		p.nextToken = result.NextKeyMarker
+	}
+
+	if p.options.StopOnDuplicateToken &&
+		prevToken != nil &&
+		p.nextToken != nil &&
+		*prevToken == *p.nextToken {
+		p.nextToken = nil
+	}
+
+	return result, nil
 }
 
 func newServiceMetadataMiddleware_opListObjectVersions(region string) *awsmiddleware.RegisterServiceMetadata {
